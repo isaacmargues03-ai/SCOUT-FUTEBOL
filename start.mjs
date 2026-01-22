@@ -1,77 +1,67 @@
 import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import express from 'express';
-import fs from 'fs';
+import axios from 'axios';
 
-// --- SERVIDOR PARA MANTER O BOT VIVO ---
 const app = express();
-app.get('/', (req, res) => res.send('scoutAI FUTEBOL ONLINE 🚀'));
-app.listen(process.env.PORT || 3000, () => console.log('🌐 Servidor de monitoramento ativo'));
+// O WispByte fornece a porta automaticamente aqui:
+const port = process.env.PORT || 8080;
 
-const dbCanais = './grupos_ativos.json';
-if (!fs.existsSync(dbCanais)) fs.writeFileSync(dbCanais, JSON.stringify([]));
+app.get('/', (req, res) => res.send('scoutAI FUTEBOL ONLINE'));
+app.listen(port, '0.0.0.0', () => console.log(`Servidor ativo na porta ${port}`));
 
-async function conectarSCOUT() {
+const API_KEY = '2b3b43375ff7e80baf7e8f7c45403e06';
+let GRUPO_DESTINO = '120363424026290830@g.us'; 
+const CANAL_ORIGEM = '120363391746244585@newsletter'; 
+let monitorAtivo = true; 
+let golsRegistrados = new Set(); 
+
+async function conectar() {
+    // No WispByte, a pasta auth_info será salva no disco do servidor
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
-    const socket = makeWASocket({ 
-        printQRInTerminal: true, 
+    const socket = makeWASocket({
         auth: state,
-        browser: ["Ubuntu", "Chrome", "20.0.04"]
+        printQRInTerminal: true, // O QR Code aparecerá no Console do WispByte
+        browser: ["scoutAI FUTEBOL", "Chrome", "1.0.0"],
     });
 
     socket.ev.on('creds.update', saveCreds);
 
     socket.ev.on('messages.upsert', async (m) => {
         const msg = m.messages[0];
-        if (!msg?.message || msg.key.fromMe) return;
+        if (!msg?.message) return;
+        const jid = msg.key.remoteJid;
 
-        const remoteJid = msg.key.remoteJid;
-        const textoRecebido = (msg.message.conversation || 
-                               msg.message.extendedTextMessage?.text || "").toLowerCase().trim();
-
-        let gruposAtivos = JSON.parse(fs.readFileSync(dbCanais));
-
-        // Comandos de Grupo
-        if (textoRecebido === 'ativar monitor de gols') {
-            if (!gruposAtivos.includes(remoteJid)) {
-                gruposAtivos.push(remoteJid);
-                fs.writeFileSync(dbCanais, JSON.stringify(gruposAtivos));
-                await socket.sendMessage(remoteJid, { text: '🚀 *scoutAI FUTEBOL - ATIVADO!*' });
-            }
-            return;
-        }
-
-        if (textoRecebido === 'desativar monitor de gols') {
-            gruposAtivos = gruposAtivos.filter(id => id !== remoteJid);
-            fs.writeFileSync(dbCanais, JSON.stringify(gruposAtivos));
-            await socket.sendMessage(remoteJid, { text: '❌ *scoutAI FUTEBOL - DESATIVADO!*' });
-            return;
-        }
-
-        // Repasse de Canais
-        if (remoteJid.includes('@newsletter')) {
-            const textoDoCanal = msg.message.conversation || 
-                                 msg.message.extendedTextMessage?.text || 
-                                 msg.message.videoMessage?.caption || 
-                                 msg.message.imageMessage?.caption || "";
-
-            if (textoDoCanal && gruposAtivos.length > 0) {
-                for (const id of gruposAtivos) {
-                    try {
-                        await new Promise(res => setTimeout(res, 3000)); // Delay anti-ban
-                        await socket.sendMessage(id, { text: `⚽ *scoutAI FUTEBOL*\n\n${textoDoCanal}` });
-                    } catch (e) {}
-                }
-            }
+        // Retransmissão do Canal
+        if (jid === CANAL_ORIGEM) {
+            const texto = msg.message.conversation || msg.message.extendedTextMessage?.text;
+            if (texto) await socket.sendMessage(GRUPO_DESTINO, { text: texto });
         }
     });
 
-    socket.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
-        if (connection === 'open') console.log('✅ BOT CONECTADO E PRONTO PARA HOSPEDAR');
+    // Loop de Gols Profissionais
+    setInterval(async () => {
+        try {
+            const res = await axios.get(`https://v3.football.api-sports.io/fixtures?live=all`, {
+                headers: { 'x-rapidapi-key': API_KEY, 'x-rapidapi-host': 'v3.football.api-sports.io' }
+            });
+            for (const j of res.data.response) {
+                const idGol = `${j.fixture.id}-${j.goals.home}-${j.goals.away}`;
+                if (!golsRegistrados.has(idGol)) {
+                    const msg = `⚽ *GOL!* ${j.teams.home.name} ${j.goals.home} x ${j.goals.away} ${j.teams.away.name}`;
+                    await socket.sendMessage(GRUPO_DESTINO, { text: msg });
+                    golsRegistrados.add(idGol);
+                }
+            }
+        } catch (e) {}
+    }, 30000);
+
+    socket.ev.on('connection.update', (u) => {
+        const { connection, lastDisconnect } = u;
+        if (connection === 'open') console.log('✅ scoutAI ONLINE NO WISPBYTE!');
         if (connection === 'close') {
-            const deveReconectar = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (deveReconectar) conectarSCOUT();
+            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) conectar();
         }
     });
 }
-conectarSCOUT();
+conectar();
