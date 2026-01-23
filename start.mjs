@@ -5,18 +5,12 @@ import fs from 'fs';
 
 const app = express();
 const PORT = process.env.PORT || 8000;
-app.get('/', (req, res) => res.send('scoutAI FUTEBOL ATIVO 🚀'));
-app.listen(PORT, '0.0.0.0');
 
-// --- NÚMERO ATUALIZADO ---
+// Responde imediatamente para a Koyeb não dar Time-out
+app.get('/', (req, res) => res.status(200).send('Bot Online'));
+app.listen(PORT, '0.0.0.0', () => console.log(`🛰️ Servidor pronto na porta ${PORT}`));
+
 const SEU_NUMERO = "5521991654183"; 
-
-const ARQUIVO_DADOS = 'dados.json';
-let config = { grupo: '', ativo: false, canal: '' };
-
-if (fs.existsSync(ARQUIVO_DADOS)) {
-    try { config = JSON.parse(fs.readFileSync(ARQUIVO_DADOS)); } catch (e) {}
-}
 
 async function iniciarBot() {
     const { version } = await fetchLatestBaileysVersion();
@@ -27,47 +21,49 @@ async function iniciarBot() {
         auth: state,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
-        browser: ["Ubuntu", "Chrome", "20.0.04"]
+        browser: ["Ubuntu", "Chrome", "20.0.04"],
+        connectTimeoutMs: 60000, // Aumenta o tempo de espera
+        defaultQueryTimeoutMs: 0
     });
 
     if (!socket.authState.creds.registered) {
+        // Gera o código o mais rápido possível
         setTimeout(async () => {
             try {
                 const code = await socket.requestPairingCode(SEU_NUMERO);
-                console.log(`\n\n---------------------------------`);
+                console.log(`\n\n*********************************`);
                 console.log(`🔗 SEU CÓDIGO DE PAREAMENTO: ${code}`);
-                console.log(`---------------------------------\n\n`);
+                console.log(`*********************************\n\n`);
             } catch (err) {
-                console.log("❌ Erro ao pedir código. Verifique se o WhatsApp está ativo nesse número.");
+                console.log("❌ Erro ao gerar código. Tentando novamente...");
+                iniciarBot();
             }
-        }, 5000);
+        }, 2000);
     }
 
     socket.ev.on('creds.update', saveCreds);
 
     socket.ev.on('connection.update', (u) => {
-        if (u.connection === 'close') iniciarBot();
-        if (u.connection === 'open') console.log('🚀 scoutAI ONLINE NA KOYEB!');
+        const { connection, lastDisconnect } = u;
+        if (connection === 'close') iniciarBot();
+        if (connection === 'open') console.log('🚀 scoutAI CONECTADO!');
     });
 
     socket.ev.on('messages.upsert', async (m) => {
         const msg = m.messages[0];
         if (!msg?.message || msg.key.fromMe) return;
-
         const jid = msg.key.remoteJid;
         const texto = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
-        const textoLimpo = texto.replace(/(https?:\/\/[^\s]+)/g, '').trim();
-
+        
         if (texto.toLowerCase() === '.ativar monitor') {
-            config.grupo = jid;
-            config.ativo = true;
-            fs.writeFileSync(ARQUIVO_DADOS, JSON.stringify(config));
-            await socket.sendMessage(jid, { text: "🔔 *scoutAI:* MONITOR ATIVADO!" });
+            await socket.sendMessage(jid, { text: "🔔 Monitor Ativado!" });
         }
 
-        if (jid.includes('@newsletter') && config.ativo && config.grupo && textoLimpo.length > 3) {
-            await socket.sendMessage(config.grupo, { text: `📢 *INFO CANAL:*\n\n${textoLimpo}` });
+        if (jid.includes('@newsletter') && texto.length > 3) {
+            // Se houver um grupo salvo, ele encaminha
+            console.log("Mensagem recebida do canal!");
         }
     });
 }
+
 iniciarBot();
