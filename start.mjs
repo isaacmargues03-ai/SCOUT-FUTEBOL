@@ -4,8 +4,6 @@ import pino from 'pino';
 
 const app = express();
 const PORT = process.env.PORT || 8000;
-
-// Isso faz a Koyeb parar de carregar e aceitar o bot como "Online"
 app.get('/', (req, res) => res.status(200).send('BOT_OK'));
 app.listen(PORT, '0.0.0.0');
 
@@ -27,19 +25,15 @@ async function iniciarBot() {
         setTimeout(async () => {
             try {
                 const code = await socket.requestPairingCode(SEU_NUMERO);
-                console.log(`\n\n---------------------------------`);
-                console.log(`🔗 CÓDIGO PARA WHATSAPP: ${code}`);
-                console.log(`---------------------------------\n\n`);
-            } catch (err) {
-                console.log("❌ Erro ao pedir código.");
-            }
+                console.log(`\n\n🔗 CÓDIGO DE PAREAMENTO: ${code}\n\n`);
+            } catch (err) { console.log("Erro ao pedir código."); }
         }, 5000);
     }
 
     socket.ev.on('creds.update', saveCreds);
     socket.ev.on('connection.update', (u) => {
         if (u.connection === 'close') iniciarBot();
-        if (u.connection === 'open') console.log('🚀 scoutAI CONECTADO!');
+        if (u.connection === 'open') console.log('🚀 scoutAI CONECTADO COM SUCESSO!');
     });
 }
 iniciarBot();
