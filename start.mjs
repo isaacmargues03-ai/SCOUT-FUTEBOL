@@ -1,14 +1,13 @@
 import makeWASocket, { useMultiFileAuthState, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import express from 'express';
 import pino from 'pino';
-import fs from 'fs';
 
 const app = express();
 const PORT = process.env.PORT || 8000;
 
-// Responde imediatamente para a Koyeb não dar Time-out
-app.get('/', (req, res) => res.status(200).send('Bot Online'));
-app.listen(PORT, '0.0.0.0', () => console.log(`🛰️ Servidor pronto na porta ${PORT}`));
+// Isso faz a Koyeb parar de carregar e aceitar o bot como "Online"
+app.get('/', (req, res) => res.status(200).send('BOT_OK'));
+app.listen(PORT, '0.0.0.0');
 
 const SEU_NUMERO = "5521991654183"; 
 
@@ -21,49 +20,26 @@ async function iniciarBot() {
         auth: state,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
-        browser: ["Ubuntu", "Chrome", "20.0.04"],
-        connectTimeoutMs: 60000, // Aumenta o tempo de espera
-        defaultQueryTimeoutMs: 0
+        browser: ["Ubuntu", "Chrome", "20.0.04"]
     });
 
     if (!socket.authState.creds.registered) {
-        // Gera o código o mais rápido possível
         setTimeout(async () => {
             try {
                 const code = await socket.requestPairingCode(SEU_NUMERO);
-                console.log(`\n\n*********************************`);
-                console.log(`🔗 SEU CÓDIGO DE PAREAMENTO: ${code}`);
-                console.log(`*********************************\n\n`);
+                console.log(`\n\n---------------------------------`);
+                console.log(`🔗 CÓDIGO PARA WHATSAPP: ${code}`);
+                console.log(`---------------------------------\n\n`);
             } catch (err) {
-                console.log("❌ Erro ao gerar código. Tentando novamente...");
-                iniciarBot();
+                console.log("❌ Erro ao pedir código.");
             }
-        }, 2000);
+        }, 5000);
     }
 
     socket.ev.on('creds.update', saveCreds);
-
     socket.ev.on('connection.update', (u) => {
-        const { connection, lastDisconnect } = u;
-        if (connection === 'close') iniciarBot();
-        if (connection === 'open') console.log('🚀 scoutAI CONECTADO!');
-    });
-
-    socket.ev.on('messages.upsert', async (m) => {
-        const msg = m.messages[0];
-        if (!msg?.message || msg.key.fromMe) return;
-        const jid = msg.key.remoteJid;
-        const texto = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
-        
-        if (texto.toLowerCase() === '.ativar monitor') {
-            await socket.sendMessage(jid, { text: "🔔 Monitor Ativado!" });
-        }
-
-        if (jid.includes('@newsletter') && texto.length > 3) {
-            // Se houver um grupo salvo, ele encaminha
-            console.log("Mensagem recebida do canal!");
-        }
+        if (u.connection === 'close') iniciarBot();
+        if (u.connection === 'open') console.log('🚀 scoutAI CONECTADO!');
     });
 }
-
 iniciarBot();
